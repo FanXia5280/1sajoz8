@@ -1,0 +1,98 @@
+name: Build ScarLog IPA
+
+# ⚠️ 首次往全新仓库 push 时，即使这次就带着本 workflow，GitHub 也不会跑它
+# （workflow 要先在默认分支上注册生效）。⇒ 首次 push 后再推一个改动即可触发。
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'ScarLog/**'
+      - 'project.yml'
+      - 'Info.plist'
+      - '.github/workflows/ios-ipa.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: |
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          fi
+          xcodegen --version
+
+      - name: Read version
+        id: ver
+        run: |
+          V=$(grep -m1 'MARKETING_VERSION' project.yml | sed 's/.*"\(.*\)".*/\1/')
+          echo "marketing=$V" >> "$GITHUB_OUTPUT"
+          echo "版本号 = $V (build ${{ github.run_number }})"
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build app (unsigned)
+        run: |
+          xcodebuild \
+            -project ScarLog.xcodeproj \
+            -scheme ScarLog \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            MARKETING_VERSION="${{ steps.ver.outputs.marketing }}" \
+            CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
+            build 2>&1 | tee build.log
+
+      - name: 失败诊断
+        if: failure()
+        run: |
+          echo "---- 编译错误（error: 行）----"
+          grep -n -E "error:|fatal error:|No such module" build.log | head -60 || true
+          echo "---- build.log 尾部 120 行 ----"
+          tail -120 build.log || true
+
+      - name: Package unsigned IPA
+        if: success()
+        run: |
+          APP=$(find build/Build/Products/Release-iphoneos -maxdepth 1 -name '*.app' | head -n 1)
+          echo "App bundle: $APP"
+          test -n "$APP"
+          rm -rf out && mkdir -p out/Payload
+          cp -R "$APP" out/Payload/
+          cd out
+          zip -qry ../ScarLog-unsigned.ipa Payload
+          ls -lh ../ScarLog-unsigned.ipa
+
+      - name: Upload artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ScarLog-unsigned-ipa
+          path: ScarLog-unsigned.ipa
+          if-no-files-found: error
+
+      - name: Publish release
+        if: success()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: ScarLog IPA ${{ steps.ver.outputs.marketing }} (build ${{ github.run_number }})
+          body: |
+            未签名 IPA（unsigned），下载后导入 LCsgn 自签名安装。
+
+            **App 版本：${{ steps.ver.outputs.marketing }} (build ${{ github.run_number }})**
+            提交：${{ github.sha }}
+          files: ScarLog-unsigned.ipa
+          make_latest: true

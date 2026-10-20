@@ -1,0 +1,36 @@
+name: ScarLog
+
+options:
+  bundleIdPrefix: com.scar
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "16.0"
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+
+targets:
+  ScarLog:
+    type: application
+    platform: iOS
+    sources:
+      - path: ScarLog
+    settings:
+      base:
+        PRODUCT_NAME: ScarLog
+        PRODUCT_BUNDLE_IDENTIFIER: com.scar.log
+        INFOPLIST_FILE: Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        TARGETED_DEVICE_FAMILY: "1"
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: "1"
+        CODE_SIGN_STYLE: Manual
+        CODE_SIGNING_REQUIRED: NO
+        CODE_SIGNING_ALLOWED: NO
+        CODE_SIGN_IDENTITY: ""
+        SWIFT_OPTIMIZATION_LEVEL: "-O"
+        ENABLE_BITCODE: NO
+        DEAD_CODE_STRIPPING: YES
