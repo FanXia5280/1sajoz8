@@ -20,6 +20,9 @@ struct ContentView: View {
                         .keyboardType(.numbersAndPunctuation)
                         .autocapitalization(.none)
                         .disableAutocorrection(true)
+                    Button("自动查找") { autoDiscover() }
+                        .buttonStyle(.bordered)
+                        .disabled(fetching)
                     Button("抓取日志") { fetch() }
                         .buttonStyle(.borderedProminent)
                         .disabled(fetching)
@@ -78,6 +81,61 @@ struct ContentView: View {
                 if let url = updater.downloadedURL {
                     ActivityView(items: [url])
                 }
+            }
+        }
+    }
+
+    /// 🔴 自动发现车机：车机连 iPhone 热点时，热点网段固定 172.20.10.x（.1 是 iPhone 自己），
+    /// 扫该网段 + 常见局域网段，探测 :8889/log 端口，命中即自动填入 IP 并抓取。
+    private func autoDiscover() {
+        guard !fetching else { return }
+        fetching = true
+        message = "正在自动查找车机…"
+
+        var ips: [String] = []
+        for i in 2...15 { ips.append("172.20.10.\(i)") }   // iOS 个人热点网段
+        for i in 2...254 { ips.append("192.168.1.\(i)") }  // 常见局域网兜底（同一 WiFi）
+
+        let sem = DispatchSemaphore(value: 20) // 并发上限
+        let group = DispatchGroup()
+        let lock = NSLock()
+        var found: String?
+
+        for ip in ips {
+            group.enter()
+            DispatchQueue.global(qos: .utility).async {
+                sem.wait()
+                defer { sem.signal(); group.leave() }
+
+                lock.lock(); let already = found != nil; lock.unlock()
+                if already { return }
+
+                guard let url = URL(string: "http://\(ip):8889/log") else { return }
+                var req = URLRequest(url: url)
+                req.timeoutInterval = 1.5
+                let done = DispatchSemaphore(value: 0)
+                var hit = false
+                URLSession.shared.dataTask(with: req) { data, _, _ in
+                    if let d = data, !d.isEmpty { hit = true }
+                    done.signal()
+                }.resume()
+                done.wait()
+                if hit {
+                    lock.lock()
+                    if found == nil { found = ip }
+                    lock.unlock()
+                }
+            }
+        }
+
+        group.notify(queue: .main) {
+            self.fetching = false
+            if let f = found {
+                self.ip = f
+                self.message = "已找到车机 \(f)"
+                self.fetch()
+            } else {
+                self.message = "未找到车机，请确认车机已连热点/同一 WiFi 并打开 Scar"
             }
         }
     }
