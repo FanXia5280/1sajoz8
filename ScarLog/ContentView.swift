@@ -6,6 +6,10 @@ import UIKit
 struct ContentView: View {
     @State private var ip: String = UserDefaults.standard.string(forKey: "carIP") ?? "192.168.1.100"
     @State private var logText: String = ""
+    // 🔴 全量日志（从车机拉到的完整内容）：复制/分享用它——用户分享的日志"前面丢失"
+    //    根因是 APK 端环只有 500 条（已改 20000）；IPA 端 SwiftUI Text 渲染上万行会卡，
+    //    所以显示只留尾部、复制/分享始终用全量。
+    @State private var fullLog: String = ""
     @State private var connected = false
     @State private var lastSyncAt = ""    // 最后一次成功同步时刻
     @State private var fetching = false   // 自动查找中（扫描网段）
@@ -73,13 +77,13 @@ struct ContentView: View {
 
                 HStack(spacing: 12) {
                     Button("复制") {
-                        UIPasteboard.general.string = logText
-                        message = "已复制到剪贴板"
+                        UIPasteboard.general.string = fullLog
+                        message = "已复制全量日志"
                     }
-                    .disabled(logText.isEmpty)
+                    .disabled(fullLog.isEmpty)
 
                     Button("分享") { shareLog() }
-                        .disabled(logText.isEmpty)
+                        .disabled(fullLog.isEmpty)
 
                     Button("检查更新") { updater.check() }
                 }
@@ -148,7 +152,8 @@ struct ContentView: View {
             DispatchQueue.main.async {
                 guard self.connected else { return }  // 已断开则丢弃迟到结果
                 if let data, let s = String(data: data, encoding: .utf8) {
-                    self.logText = s
+                    self.fullLog = s
+                    self.logText = Self.tail(s, 500)   // 显示只留尾部（防 SwiftUI 大文本卡）
                     let f = DateFormatter()
                     f.dateFormat = "HH:mm:ss"
                     self.lastSyncAt = f.string(from: Date())
@@ -217,11 +222,18 @@ struct ContentView: View {
         let name = "scar-log-\(Int(Date().timeIntervalSince1970)).txt"
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(name)
         do {
-            try logText.write(to: url, atomically: true, encoding: .utf8)
+            try fullLog.write(to: url, atomically: true, encoding: .utf8)
             shareItems = [url]
             showShare = true
         } catch {
             message = "写入临时文件失败：\(error.localizedDescription)"
         }
+    }
+
+    /// 🔴 取文本尾部 limit 行（显示用；复制/分享走全量 fullLog）。
+    private static func tail(_ s: String, _ limit: Int) -> String {
+        var lines = s.split(separator: "\n", omittingEmptySubsequences: false)
+        guard lines.count > limit else { return s }
+        return lines.suffix(limit).joined(separator: "\n")
     }
 }
