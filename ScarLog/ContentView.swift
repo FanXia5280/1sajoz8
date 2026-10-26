@@ -111,10 +111,10 @@ struct ContentView: View {
                     .cornerRadius(10)
                     .padding(.horizontal)
                 } else {
-                    // 🔴 诊断显示：崩溃日志 / KILL.log，一键提取 + 分享
+                    // 🔴 诊断显示：一键拉全（运行日志+崩溃日志+被杀日志，分段）
                     ScrollView {
                         Text(diagText.isEmpty
-                             ? "点下面「提取崩溃日志」或「提取KILL日志」\n（车机端 Scar 会开 :8889/crash 和 :8889/kill 端点）"
+                             ? "点下面「一键诊断」\n（车机端 Scar 开 :8889/diag，一次拿全：运行日志 + 崩溃日志 + 被杀日志）"
                              : diagText)
                             .font(.system(.caption, design: .monospaced))
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -148,11 +148,14 @@ struct ContentView: View {
                         Button("分享") { sharePackages() }
                             .disabled(pkgText.isEmpty)
                     } else {
-                        Button("崩溃日志") { fetchDiag("crash") }
+                        Button("一键诊断") { fetchDiag() }
                             .disabled(diagFetching)
 
-                        Button("KILL日志") { fetchDiag("kill") }
-                            .disabled(diagFetching)
+                        Button("复制") {
+                            UIPasteboard.general.string = diagText
+                            message = "已复制诊断日志"
+                        }
+                        .disabled(diagText.isEmpty)
 
                         Button("分享") { shareDiag() }
                             .disabled(diagText.isEmpty)
@@ -337,16 +340,16 @@ struct ContentView: View {
         }
     }
 
-    /// 🔴 提取诊断文件：name = "crash"（崩溃日志）/ "kill"（KILL.log），拉 :8889/crash 或 :8889/kill。
-    private func fetchDiag(_ name: String) {
+    /// 🔴 一键诊断：拉 :8889/diag，一次拿全（运行日志 + 崩溃日志 + 被杀日志，分段）。
+    private func fetchDiag() {
         guard !ip.isEmpty else {
             diagText = "请先输入车机 IP"
             return
         }
         diagFetching = true
-        diagName = name == "crash" ? "崩溃日志" : "KILL日志"
+        diagName = "诊断"
         message = ""
-        let url = URL(string: "http://\(ip):8889/\(name)")!
+        let url = URL(string: "http://\(ip):8889/diag")!
         URLSession.shared.dataTask(with: url) { data, _, error in
             DispatchQueue.main.async {
                 self.diagFetching = false
@@ -359,7 +362,7 @@ struct ContentView: View {
         }.resume()
     }
 
-    /// 🔴 分享诊断文件（崩溃日志 / KILL.log）成 txt。
+    /// 🔴 分享诊断文件（运行日志 + 崩溃 + 被杀整合）成 txt。
     private func shareDiag() {
         let kind = diagName.isEmpty ? "diag" : diagName
         let name = "scar-\(kind)-\(Int(Date().timeIntervalSince1970)).txt"
