@@ -24,6 +24,10 @@ struct ContentView: View {
     @State private var mode = 0
     @State private var pkgText = ""
     @State private var pkgFetching = false
+    // 🔴 诊断文件提取：mode 2=诊断；diagText = 车机 /crash 或 /kill 返回的内容
+    @State private var diagText = ""
+    @State private var diagFetching = false
+    @State private var diagName = ""   // "崩溃日志" / "KILL日志"
 
     var body: some View {
         NavigationView {
@@ -48,10 +52,11 @@ struct ContentView: View {
                     ProgressView()
                 }
 
-                // 🔴 模式切换：日志 / 应用列表（应用列表 = 车机 /packages 端点返回的包名+应用名）
+                // 🔴 模式切换：日志 / 应用列表 / 诊断（崩溃日志 + KILL.log）
                 Picker("", selection: $mode) {
                     Text("日志").tag(0)
                     Text("应用列表").tag(1)
+                    Text("诊断").tag(2)
                 }
                 .pickerStyle(.segmented)
                 .padding(.horizontal)
@@ -92,12 +97,25 @@ struct ContentView: View {
                     .background(Color(.secondarySystemBackground))
                     .cornerRadius(10)
                     .padding(.horizontal)
-                } else {
+                } else if mode == 1 {
                     // 🔴 应用列表显示：包名 + 应用名，可复制/分享成 txt（给 AI/别人看）
                     ScrollView {
                         Text(pkgText.isEmpty
                              ? (pkgFetching ? "正在拉取应用列表…" : "点「提取」从车机拉取应用列表\n（车机端 Scar 会开 :8889/packages 端点）")
                              : pkgText)
+                            .font(.system(.caption, design: .monospaced))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding()
+                    }
+                    .background(Color(.secondarySystemBackground))
+                    .cornerRadius(10)
+                    .padding(.horizontal)
+                } else {
+                    // 🔴 诊断显示：崩溃日志 / KILL.log，一键提取 + 分享
+                    ScrollView {
+                        Text(diagText.isEmpty
+                             ? "点下面「提取崩溃日志」或「提取KILL日志」\n（车机端 Scar 会开 :8889/crash 和 :8889/kill 端点）"
+                             : diagText)
                             .font(.system(.caption, design: .monospaced))
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding()
@@ -117,7 +135,7 @@ struct ContentView: View {
 
                         Button("分享") { shareLog() }
                             .disabled(fullLog.isEmpty)
-                    } else {
+                    } else if mode == 1 {
                         Button("提取") { fetchPackages() }
                             .disabled(pkgFetching)
 
@@ -129,6 +147,15 @@ struct ContentView: View {
 
                         Button("分享") { sharePackages() }
                             .disabled(pkgText.isEmpty)
+                    } else {
+                        Button("崩溃日志") { fetchDiag("crash") }
+                            .disabled(diagFetching)
+
+                        Button("KILL日志") { fetchDiag("kill") }
+                            .disabled(diagFetching)
+
+                        Button("分享") { shareDiag() }
+                            .disabled(diagText.isEmpty)
                     }
 
                     Button("检查更新") { updater.check() }
@@ -303,6 +330,42 @@ struct ContentView: View {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(name)
         do {
             try pkgText.write(to: url, atomically: true, encoding: .utf8)
+            shareItems = [url]
+            showShare = true
+        } catch {
+            message = "写入临时文件失败：\(error.localizedDescription)"
+        }
+    }
+
+    /// 🔴 提取诊断文件：name = "crash"（崩溃日志）/ "kill"（KILL.log），拉 :8889/crash 或 :8889/kill。
+    private func fetchDiag(_ name: String) {
+        guard !ip.isEmpty else {
+            diagText = "请先输入车机 IP"
+            return
+        }
+        diagFetching = true
+        diagName = name == "crash" ? "崩溃日志" : "KILL日志"
+        message = ""
+        let url = URL(string: "http://\(ip):8889/\(name)")!
+        URLSession.shared.dataTask(with: url) { data, _, error in
+            DispatchQueue.main.async {
+                self.diagFetching = false
+                if let data, let s = String(data: data, encoding: .utf8), !s.isEmpty {
+                    self.diagText = s
+                } else {
+                    self.diagText = "拉取失败：\(error?.localizedDescription ?? "无响应")（确认车机 Scar 已打开）"
+                }
+            }
+        }.resume()
+    }
+
+    /// 🔴 分享诊断文件（崩溃日志 / KILL.log）成 txt。
+    private func shareDiag() {
+        let kind = diagName.isEmpty ? "diag" : diagName
+        let name = "scar-\(kind)-\(Int(Date().timeIntervalSince1970)).txt"
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(name)
+        do {
+            try diagText.write(to: url, atomically: true, encoding: .utf8)
             shareItems = [url]
             showShare = true
         } catch {
