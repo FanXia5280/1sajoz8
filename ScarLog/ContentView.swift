@@ -47,6 +47,12 @@ struct ContentView: View {
                         .tint(connected ? .red : .accentColor)
                 }
                 .padding(.horizontal)
+                .onAppear {
+                    // 🔴 打开 App 自动查找车机（未连接时）：换 WiFi/热点网段不用手动输 IP
+                    if !connected && !fetching {
+                        autoDiscover()
+                    }
+                }
 
                 if fetching {
                     ProgressView()
@@ -260,16 +266,49 @@ struct ContentView: View {
         }.resume()
     }
 
-    /// 🔴 自动发现车机：车机连 iPhone 热点时，热点网段固定 172.20.10.x（.1 是 iPhone 自己），
-    /// 扫该网段 + 常见局域网段，探测 :8889/log 端口，命中即自动填入 IP 并连接。
+    /// 🔴 取 iPhone 当前所有 IPv4（getifaddrs）：自动推算当前 WiFi/热点网段
+    private func localIPs() -> [String] {
+        var ips: [String] = []
+        var ifaddr: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&ifaddr) == 0, let first = ifaddr else { return ips }
+        defer { freeifaddrs(first) }
+        var p: UnsafeMutablePointer<ifaddrs>? = first
+        while let cur = p {
+            defer { p = cur.pointee.ifa_next }
+            guard let sa = cur.pointee.ifa_addr,
+                  sa.pointee.sa_family == UInt8(AF_INET) else { continue }
+            var addr = sockaddr_in()
+            memcpy(&addr, sa, MemoryLayout<sockaddr_in>.size)
+            if let s = String(cString: inet_ntoa(addr.sin_addr), encoding: .utf8),
+               !s.hasPrefix("127.") {
+                ips.append(s)
+            }
+        }
+        return ips
+    }
+
+    /// 🔴 自动发现车机：按 iPhone 当前 WiFi/热点自身 IP 动态推算网段（连车机热点/
+    /// 自己开热点/同一 WiFi 全覆盖），探测 :8889/log 端口，命中自动填 IP 并连接。
     private func autoDiscover() {
         guard !fetching else { return }
         fetching = true
         message = "正在自动查找车机…"
 
         var ips: [String] = []
-        for i in 2...15 { ips.append("172.20.10.\(i)") }   // iOS 个人热点网段
-        for i in 2...254 { ips.append("192.168.1.\(i)") }  // 常见局域网兜底（同一 WiFi）
+        // 🔴 动态网段（2026-11-14）：iPhone 当前网络的自身 IP 推算——网段变了不用改 IP
+        for local in localIPs() {
+            let parts = local.split(separator: ".")
+            if parts.count == 4 {
+                let prefix = parts[0...2].joined(separator: ".")
+                for i in 2...254 { ips.append("\(prefix).\(i)") }
+            }
+        }
+        // 兜底：iOS 个人热点固定网段 + 常见局域网 + Android 热点常见网段
+        for i in 2...15 { ips.append("172.20.10.\(i)") }
+        for i in 2...254 { ips.append("192.168.1.\(i)") }
+        for i in 2...254 { ips.append("192.168.43.\(i)") }
+        var seen = Set<String>()
+        ips = ips.filter { seen.insert($0).inserted }
 
         let sem = DispatchSemaphore(value: 20) // 并发上限
         let group = DispatchGroup()

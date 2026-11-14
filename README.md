@@ -1,5 +1,8 @@
 # ScarLog —— Scar 车机桌面一键抓日志 IPA
 
+> 🔴🔴 **2026-11-12 换 AI 全量状态同步（本文件其余旧结论均为历史存档，以本块 + `scar/AI交接文档.md` 为准）**：Scar `0.13.26 / versionCode 171` 已推云；**HUD 歌词已同步、不用管**（通道 = `sendMediaSource(JSON)`，0.13.22 真车已显示）。Scar 已删干净 D 桌面 native 歌词 SDK（libnc.so + 4 java + HudController 5 处调用），保留通用 `TombstoneProbe`。**高德主线 = modder 成品「纯情完美飞屏包+转向卡」共存版 `com.scar.amap`**，产物 `d:\IPA备份\amap_flyscreen_coexist_hud.apk`（AOSP 平台签名 `c8a2e9bc`，**v11**）：**退回 v8 画底色**（撤销 v9 fitWindow 黄框裁剪，模拟器恢复小窗）+ **修 V8 飞屏挂主屏**（真车三屏同名「HDMI 屏幕」→ `prepare` 置空 displayName 强制走 `deviceId-1000==displayId`，deviceId = selectDisplay 选中屏 displayId+1000）。**🎯 用户 2026-11-12 换 AI：下一轮主要改「高德地图」**（Scar 0.13.26 歌词已通、不用动、别误伤）。**v11（2026-11-12 第二百零四批）已修「飞屏后 0.5s 闪退」= Java NPE**：SecondaryGuideOverlay.univSmallWindowChanged 对恒 null 的 layer 调 setVisibility（由 modder PresentationUIView.onSizeChanged 飞屏窗口 resize 触发，停转向卡的连带缺陷）→ 改成只记状态。**模拟器已验**：3s 自动飞屏到副屏黄框（deviceId=1003=displayId 3+1000、displayName='null'）、60s+ 不崩、crash buffer 空。**待真车验 3 件**：① 真车飞屏是否到 HUD 黄框、主屏无小窗、长时间导航不崩；② 罗盘「圈」是否还在（要不要去圈先问用户）；③ 车标观感。**权威文档 = `scar/AI交接文档.md`（2026-11-12 全量重写、唯一权威）「一、当前状态」+「二、下一轮主线：高德地图」（含待验证清单 / 测试步骤 / 打包命令 / 已知坑）+ `scar/README.md` §7 第二百零三批 + §10 顶部 11-12 快照 + `MEMORY.md` 下一步待办。**
+
+
 配套 [Scar 新桌面](https://github.com/FanXia5280) 的日志抓取 + 云更新 iPhone App。
 **本仓库只放 iOS 代码，Android 代码不在此仓库。**
 
